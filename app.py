@@ -51,14 +51,21 @@ def load_sheet():
     basic_info: dict = {}
     if extra_csv.strip():
         try:
-            basic_df = pd.read_csv(io.StringIO(extra_csv))
-            basic_df = basic_df.dropna(how="all").dropna(axis=1, how="all")
-            if not basic_df.empty:
-                basic_info = {
-                    k: str(v).strip()
-                    for k, v in basic_df.iloc[0].items()
-                    if pd.notna(v)
-                }
+            # Skip any leading blank rows before the profile header
+            profile_lines = []
+            for line in extra_csv.split("\n"):
+                if not profile_lines and all(v.strip() == "" for v in line.split(",")):
+                    continue
+                profile_lines.append(line)
+            if profile_lines:
+                basic_df = pd.read_csv(io.StringIO("\n".join(profile_lines)))
+                basic_df = basic_df.dropna(how="all").dropna(axis=1, how="all")
+                if not basic_df.empty:
+                    basic_info = {
+                        k: str(v).strip()
+                        for k, v in basic_df.iloc[0].items()
+                        if pd.notna(v)
+                    }
         except Exception:
             pass
 
