@@ -72,18 +72,39 @@ def load_sheet():
     return df, basic_info
 
 
-def calc_ideal(basic_info: dict) -> dict:
-    """Calculate ideal body composition targets from height and gender."""
-    height_str = str(basic_info.get("身長", "170cm"))
-    height_cm = float("".join(c for c in height_str if c.isdigit() or c == "."))
-    h = height_cm / 100
-    female = "女" in str(basic_info.get("性別", "男"))
+def calc_ideal(basic_info: dict, latest: "pd.Series | None" = None) -> dict:
+    """Calculate ideal body composition targets.
 
-    return {
-        "weight": round(h ** 2 * 22, 1),
-        "fat": 25.0 if female else 20.0,
-        "muscle": 28.0 if female else 33.0,
-    }
+    Weight and muscle% are derived from current lean body mass so that
+    reaching the fat% target doesn't require losing muscle.
+    """
+    female = "女" in str(basic_info.get("性別", "男"))
+    target_fat = 25.0 if female else 15.0
+
+    # Derive targets from current lean body mass when data is available
+    if (
+        latest is not None
+        and pd.notna(latest.get("体重(kg)"))
+        and pd.notna(latest.get("体脂肪率(%)"))
+    ):
+        cur_weight = latest["体重(kg)"]
+        lbm = cur_weight * (1 - latest["体脂肪率(%)"] / 100)
+        target_weight = round(lbm / (1 - target_fat / 100), 1)
+
+        cur_muscle = latest.get("骨格筋量(%)")
+        if pd.notna(cur_muscle):
+            muscle_mass = cur_weight * cur_muscle / 100
+            target_muscle = round(muscle_mass / target_weight * 100, 1)
+        else:
+            target_muscle = 28.0 if female else 36.0
+    else:
+        height_str = str(basic_info.get("身長", "170cm"))
+        height_cm = float("".join(c for c in height_str if c.isdigit() or c == "."))
+        h = height_cm / 100
+        target_weight = round(h ** 2 * 22, 1)
+        target_muscle = 28.0 if female else 36.0
+
+    return {"weight": target_weight, "fat": target_fat, "muscle": target_muscle}
 
 
 def _build_prompt(df: pd.DataFrame, basic_info: dict, ideal: dict) -> str:
@@ -169,7 +190,7 @@ if df.empty:
     st.stop()
 
 latest = df.iloc[-1]
-ideal = calc_ideal(basic_info) if basic_info else {}
+ideal = calc_ideal(basic_info, latest) if basic_info else {}
 
 # ── Latest data cards ────────────────────────────────────────────────────────
 st.subheader("最新データ")
